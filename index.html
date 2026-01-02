@@ -51,6 +51,7 @@
       padding: 1rem;
       background: #1a1a1a;
       gap: 0.5rem;
+      align-items: center;
     }
     #message-input {
       flex: 1;
@@ -65,7 +66,7 @@
       outline: none;
       background: #333;
     }
-    #send-btn {
+    button {
       padding: 0 1.5rem;
       background: #0044ff;
       color: white;
@@ -73,8 +74,9 @@
       border-radius: 12px;
       cursor: pointer;
       font-weight: bold;
+      height: 48px;
     }
-    #send-btn:hover {
+    button:hover {
       background: #0055ff;
     }
     #status {
@@ -88,17 +90,20 @@
 <body>
   <header>Eliza Agent (Phala TEE)</header>
   <div id="chat"></div>
-  <div id="status">Ready</div>
+  <div id="status">Loading...</div>
   <div id="input-area">
     <input type="text" id="message-input" placeholder="Type your message..." autocomplete="off" />
     <button id="send-btn">Send</button>
+    <button id="verify-btn">Verify TEE Status</button>
   </div>
 
   <script>
-    const API_URL = "https://43cb7dbb2f8a92b5b621c6662d6447daa686fd1e-3000.dstack-pha-prod5.phala.network"
+    const API_URL = "https://43cb7dbb2f8a92b5b621c6662d6447daa686fd1e-3000.dstack-pha-prod5.phala.network/api/chat";
+    const BASE_URL = "https://43cb7dbb2f8a92b5b621c6662d6447daa686fd1e-3000.dstack-pha-prod5.phala.network";
     const chatDiv = document.getElementById("chat");
     const input = document.getElementById("message-input");
     const sendBtn = document.getElementById("send-btn");
+    const verifyBtn = document.getElementById("verify-btn");
     const status = document.getElementById("status");
 
     function addMessage(text, role) {
@@ -109,13 +114,29 @@
       chatDiv.scrollTop = chatDiv.scrollHeight;
     }
 
+    async function checkTEE() {
+      status.textContent = "Checking TEE worker status...";
+      try {
+        const res = await fetch(BASE_URL, { method: 'GET' });
+        if (res.ok || res.status === 404 || res.status === 200) {
+          addMessage(" TEE Worker is AWAKE and running! You can chat now.", "bot");
+          status.textContent = "Ready (TEE Awake)";
+        } else {
+          throw new Error(`Status: ${res.status}`);
+        }
+      } catch (err) {
+        addMessage(" TEE Worker is sleeping/down (503 or timeout). Refresh the page multiple times or spam the base URL to wake it up!", "bot");
+        status.textContent = "Sleeping – refresh to wake";
+      }
+    }
+
     async function sendMessage() {
       const message = input.value.trim();
       if (!message) return;
 
       addMessage(message, "user");
       input.value = "";
-      status.textContent = "Thinking...";
+      status.textContent = "Waiting for response (might be waking up)...";
 
       try {
         const response = await fetch(API_URL, {
@@ -123,30 +144,33 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: message,
-            character: "eliza-in-tee"  // matches your deployed character
+            character: "eliza-in-tee"
           })
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} – Worker waking up? Try again in 30s or refresh page.`);
+        }
 
         const data = await response.json();
-        const botReply = data.response || data.message || "No reply ðŸ˜¢";
+        const botReply = data.response || data.message || JSON.stringify(data);
         addMessage(botReply, "bot");
         status.textContent = "Ready";
       } catch (err) {
-        addMessage("Error: " + err.message + " (check console)", "bot");
-        status.textContent = "Error â€“ check connection";
-        console.error(err);
+        addMessage(`Error: ${err.message} – Common on cold start. Keep refreshing or trying!`, "bot");
+        status.textContent = "Error – worker might be booting";
       }
     }
 
     sendBtn.addEventListener("click", sendMessage);
+    verifyBtn.addEventListener("click", checkTEE);
     input.addEventListener("keypress", (e) => {
       if (e.key === "Enter") sendMessage();
     });
 
-    // Welcome message
-    addMessage("Yo! I'm your Eliza agent running in Phala TEE with beast models (DeepSeek R1, Qwen Coder 480B, etc.). Hit me with code, questions, HTML fixes â€” I got you ðŸ˜¤", "bot");
+    // Startup
+    addMessage("Yo bro! Eliza TEE agent ready. If no response, click 'Verify TEE Status' or refresh page a few times to wake the worker. Powered by DeepSeek R1 & Qwen Coder beasts ", "bot");
+    checkTEE();  // Auto check on load
   </script>
 </body>
 </html>
